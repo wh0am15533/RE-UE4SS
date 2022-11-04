@@ -2,15 +2,15 @@ New
 * Mods that have 'enabled.txt' present in their mod directory are now always loaded regardless of their state in mods.txt.
 * Added 'UseUObjectArrayCache' to UE4SS-settings.ini. See the ini file to more information.
 
+
 Lua
 * Added better support for StrProperty/FString.
   They can now be set like any other variable (Lua literal strings get auto-converted to FStrings).
   Parameters for "RegisterHook" that are of type FString are now also supported.
 * Added support for SoftClassProperty/TSoftClassPtr.
 * Added support for FSoftObjectPath and TSoftClassPtr, see API.txt for more information.
-* The global function "RegisterHook" now returns two integers that represent pre & post callback ids.
-  These ids can be passed to the "UnregisterHook" global function to unhook a function.
 
 
 Fixes
 * Fixed a bug that caused an occasional crash on startup.
+* Fix additional bug with Instanced Specifiers - should now be fully accurate.
