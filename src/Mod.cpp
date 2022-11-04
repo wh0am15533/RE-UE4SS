@@ -55,7 +55,7 @@ namespace RC
     LuaMadeSimple::Lua* LuaStatics::console_executor{};
     bool LuaStatics::console_executor_enabled{};
 
-    static auto get_mod_ref(const LuaMadeSimple::Lua& lua) -> Mod*
+    static auto get_mod_ref(const LuaMadeSimple::Lua& lua) -> const Mod*
     {
         if (lua_getglobal(lua.get_lua_state(), "ModRef") == LUA_TNIL)
         {
@@ -130,6 +130,8 @@ namespace RC
         bool has_properties_to_process = lua_data.has_return_value || num_unreal_params > 0;
         if (has_properties_to_process && context.TheStack.Locals)
         {
+            int32_t current_param_offset{};
+
             context.TheStack.CurrentNativeFunction->ForEachProperty([&](Unreal::FProperty* func_prop) {
                 // Skip this property if it's not a parameter
                 if (!func_prop->HasAnyPropertyFlags(Unreal::EPropertyFlags::CPF_Parm))
@@ -150,7 +152,10 @@ namespace RC
                 if (LuaType::StaticState::m_property_value_pushers.contains(name_comparison_index))
                 {
                     // Non-typed pointer to the current parameter value
-                    void* data = &context.TheStack.Locals[func_prop->GetOffset_Internal()];
+                    void* data = &context.TheStack.Locals[current_param_offset];
+
+                    // Keeping track of where in the 'Locals' array the next property is
+                    current_param_offset += func_prop->GetSize();
 
                     // Set up a call to a handler for this type of Unreal property (the param)
                     // The FName is being used as a key for an unordered_map which has the types & corresponding handlers filled right after the dll is injected
@@ -507,34 +512,6 @@ namespace RC
         property_type_table.make_local();
     }
 
-    auto static make_hook_state(Mod* mod, const LuaMadeSimple::Lua& lua) -> void
-    {
-        if (!mod->m_hook_lua)
-        {
-            mod->m_hook_lua = &lua.new_thread();
-
-            // Make the hook thread (which is just a separate Lua stack) be a global in its parent.
-            // This is needed because otherwise it will be GCd when we don't want it to.
-            lua_setglobal(lua.get_lua_state(), "HookThread");
-
-            mod->prepare_mod(*mod->m_hook_lua);
-
-            // Commenting out until we switch to lua_newstate instead of lua_newthread.
-            // For the switch to happen, we need to be able to move or copy Lua types across lua_states which we can't do yet.
-            /*
-            mod->m_hook_lua->register_function("RegisterHook", [](const LuaMadeSimple::Lua& lua) -> int {
-                lua.throw_error("'RegisterHook' is not allowed from the game thread");
-                return 0;
-            });
-
-            mod->m_hook_lua->register_function("NotifyOnNewObject", [](const LuaMadeSimple::Lua& lua) -> int {
-                lua.throw_error("'NotifyOnNewObject' is not allowed in the game thread");
-                return 0;
-            });
-            //*/
-        }
-    }
-
     auto static register_all_property_types(const LuaMadeSimple::Lua& lua) -> void
     {
         auto property_types_table = lua.prepare_new_table();
@@ -568,9 +545,9 @@ namespace RC
         property_types_table.make_global("PropertyTypes");
     }
 
-    auto Mod::setup_lua_require_paths(const LuaMadeSimple::Lua& lua) const -> void
+    auto Mod::setup_lua_require_paths() const -> void
     {
-        auto* lua_state = lua.get_lua_state();
+        auto* lua_state = m_lua.get_lua_state();
         lua_getglobal(lua_state, "package");
         lua_getfield(lua_state, -1, "path");
         std::string current_paths = lua_tostring(lua_state, -1);
@@ -893,29 +870,47 @@ Overloads:
                 return 0;
             });
 
-            lua.register_function("UnregisterHook", [](const LuaMadeSimple::Lua& lua) -> int {
+            lua.register_function("RegisterHook", [](const LuaMadeSimple::Lua& lua) -> int {
                 std::string error_overload_not_found{R"(
-No overload found for function 'UnregisterHook'.
+No overload found for function 'RegisterHook'.
 Overloads:
-#1: UnregisterHook(string UFunction_Name, integer PreCallbackId, integer PostCallbackId))"};
+#1: RegisterHook(string UFunction_Name, LuaFunction callback))"};
 
                 if (!lua.is_string()) { lua.throw_error(error_overload_not_found); }
+
                 std::wstring function_name = to_wstring(lua.get_string());
                 std::wstring function_name_no_prefix = function_name.substr(function_name.find_first_of(L" ") + 1, function_name.size());
+
+                if (!lua.is_function()) { lua.throw_error(error_overload_not_found); }
+
+                // Duplicate the Lua function to the top of the stack for luaL_ref
+                lua_pushvalue(lua.get_lua_state(), 1);
+
+                // Take a reference to the Lua function (it also pops it of the stack)
+                const auto lua_callback_registry_index = luaL_ref(lua.get_lua_state(), LUA_REGISTRYINDEX);
+
                 Unreal::UFunction* unreal_function = Unreal::UObjectGlobals::StaticFindObject<Unreal::UFunction*>(nullptr, nullptr, function_name_no_prefix);
                 if (!unreal_function)
                 {
-                    lua.throw_error("Tried to unregister a hook with Lua function 'UnregisterHook' but no UFunction with the specified name was found.");
+                    lua.throw_error("Tried to register a hook with Lua function 'RegisterHook' but no UFunction with the specified name was found.");
                 }
 
-                if (!lua.is_integer()) { lua.throw_error(error_overload_not_found); }
-                const auto pre_id = lua.get_integer();
+                auto& custom_data = g_hooked_script_function_data.emplace_back(
+                        std::make_unique<LuaUnrealScriptFunctionData>(LuaUnrealScriptFunctionData{
+                                0,
+                                0,
+                                unreal_function,
+                                get_mod_ref(lua),
+                                lua,
+                                lua_callback_registry_index
+                        })
+                );
+                //unreal_function->register_hook(&lua_unreal_script_function_hook_pre, &lua_unreal_script_function_hook_post, custom_data.get());
+                auto pre_id = unreal_function->RegisterPreHook(&lua_unreal_script_function_hook_pre, custom_data.get());
+                auto post_id = unreal_function->RegisterPostHook(&lua_unreal_script_function_hook_post, custom_data.get());
+                custom_data->pre_callback_id = pre_id;
+                custom_data->post_callback_id = post_id;
 
-                if (!lua.is_integer()) { lua.throw_error(error_overload_not_found); }
-                const auto post_id = lua.get_integer();
-
-                unreal_function->UnregisterHook(pre_id);
-                unreal_function->UnregisterHook(post_id);
                 return 0;
             });
 
@@ -1291,17 +1286,12 @@ Overloads:
                 lua.throw_error(error_overload_not_found);
             }
 
-            auto mod = get_mod_ref(lua);
-            make_hook_state(mod, lua);
-
-            lua_xmove(lua.get_lua_state(), mod->m_hook_lua->get_lua_state(), 1);
-
             // Take a reference to the Lua function (it also pops it of the stack)
-            const int32_t lua_callback_registry_index = mod->m_hook_lua->registry().make_ref();
+            const int32_t lua_callback_registry_index = lua.registry().make_ref();
 
             Unreal::UClass* instance_of_class = Unreal::UObjectGlobals::StaticFindObject<Unreal::UClass*>(nullptr, nullptr, class_name);
 
-            Mod::m_static_construct_object_lua_callbacks.emplace_back(Mod::LuaCallbackData{*mod->m_hook_lua, instance_of_class, {lua_callback_registry_index}});
+            Mod::m_static_construct_object_lua_callbacks.emplace_back(Mod::LuaCallbackData{lua, instance_of_class, {lua_callback_registry_index}});
 
             return 0;
         });
@@ -1762,63 +1752,9 @@ Overloads:
         });
     }
 
-    auto Mod::setup_lua_global_functions(const LuaMadeSimple::Lua& lua) const -> void
+    auto Mod::setup_lua_global_functions() const -> void
     {
-        setup_lua_global_functions_internal(lua, IsTrueMod::Yes);
-    }
-
-    auto Mod::setup_lua_global_functions_main_state_only() const -> void
-    {
-        m_lua.register_function("RegisterHook", [](const LuaMadeSimple::Lua& lua) -> int {
-            std::string error_overload_not_found{R"(
-No overload found for function 'RegisterHook'.
-Overloads:
-#1: RegisterHook(string UFunction_Name, LuaFunction callback))"};
-
-            if (!lua.is_string()) { lua.throw_error(error_overload_not_found); }
-
-            std::wstring function_name = to_wstring(lua.get_string());
-            std::wstring function_name_no_prefix = function_name.substr(function_name.find_first_of(L" ") + 1, function_name.size());
-
-            if (!lua.is_function()) { lua.throw_error(error_overload_not_found); }
-
-            auto mod = get_mod_ref(lua);
-            make_hook_state(mod, lua);
-
-            // Duplicate the Lua function to the top of the stack for lua_xmove and luaL_ref
-            lua_pushvalue(lua.get_lua_state(), 1);
-
-            lua_xmove(lua.get_lua_state(), mod->m_hook_lua->get_lua_state(), 1);
-
-            // Take a reference to the Lua function (it also pops it of the stack)
-            const auto lua_callback_registry_index = luaL_ref(mod->m_hook_lua->get_lua_state(), LUA_REGISTRYINDEX);
-
-            Unreal::UFunction* unreal_function = Unreal::UObjectGlobals::StaticFindObject<Unreal::UFunction*>(nullptr, nullptr, function_name_no_prefix);
-            if (!unreal_function)
-            {
-                lua.throw_error("Tried to register a hook with Lua function 'RegisterHook' but no UFunction with the specified name was found.");
-            }
-
-            auto& custom_data = g_hooked_script_function_data.emplace_back(
-                std::make_unique<LuaUnrealScriptFunctionData>(LuaUnrealScriptFunctionData{
-                    0,
-                    0,
-                    unreal_function,
-                    get_mod_ref(lua),
-                    *mod->m_hook_lua,
-                    lua_callback_registry_index
-                })
-            );
-            auto pre_id = unreal_function->RegisterPreHook(&lua_unreal_script_function_hook_pre, custom_data.get());
-            auto post_id = unreal_function->RegisterPostHook(&lua_unreal_script_function_hook_post, custom_data.get());
-            custom_data->pre_callback_id = pre_id;
-            custom_data->post_callback_id = post_id;
-
-            lua.set_integer(pre_id);
-            lua.set_integer(post_id);
-
-            return 2;
-        });
+        setup_lua_global_functions_internal(m_lua, IsTrueMod::Yes);
     }
 
     auto static is_unreal_version_out_of_bounds_from_64bit(int64_t major_version, int64_t minor_version) -> bool
@@ -1994,9 +1930,9 @@ Overloads:
         // FPackageName -> END
     }
 
-    auto Mod::setup_lua_classes(const LuaMadeSimple::Lua& lua) const -> void
+    auto Mod::setup_lua_classes() const -> void
     {
-        setup_lua_classes_internal(lua);
+        setup_lua_classes_internal(m_lua);
     }
 
     auto Mod::get_name() const -> std::wstring_view
@@ -2024,31 +1960,26 @@ Overloads:
         return m_installed;
     }
 
-    auto Mod::prepare_mod(LuaMadeSimple::Lua& lua) -> void
+    auto Mod::start_mod() const -> void
     {
-        lua.open_all_libs();
+        m_lua.open_all_libs();
 
-        setup_lua_require_paths(lua);
+        setup_lua_require_paths();
 
-        setup_lua_global_functions(lua);
-        setup_lua_classes(lua);
+        setup_lua_global_functions();
+        setup_lua_classes();
 
         // Setup a global reference for this mod
         // It can be accessed later when you otherwise don't have access to the 'Mod' instance
-        LuaType::Mod::construct(lua, this);
-        lua_setglobal(lua.get_lua_state(), "ModRef");
+        LuaType::Mod::construct(m_lua, this);
+        lua_setglobal(m_lua.get_lua_state(), "ModRef");
 
         // Setup all the input related globals (keys & modifier keys)
-        register_input_globals(lua);
+        register_input_globals(m_lua);
 
-        register_all_property_types(lua);
-        register_object_flags(lua);
-    }
+        register_all_property_types(m_lua);
+        register_object_flags(m_lua);
 
-    auto Mod::start_mod() -> void
-    {
-        prepare_mod(m_lua);
-        setup_lua_global_functions_main_state_only();
         m_is_started = true;
         m_lua.execute_file(m_scripts_path + L"\\main.lua");
     }
@@ -2061,10 +1992,6 @@ Overloads:
     auto Mod::uninstall() const -> void
     {
         Output::send(STR("Stopping mod '{}' for uninstall\n"), m_mod_name);
-        if (m_hook_lua && m_hook_lua->get_lua_state())
-        {
-            lua_resetthread(m_hook_lua->get_lua_state());
-        }
         lua_close(lua().get_lua_state());
 
         // Unhook all UFunctions for this mod & remove from the map that keeps track of which UFunctions have been hooked

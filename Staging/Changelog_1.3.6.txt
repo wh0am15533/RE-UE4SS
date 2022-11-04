@@ -1,5 +1,6 @@
 New
 * Mods that have 'enabled.txt' present in their mod directory are now always loaded regardless of their state in mods.txt.
+* Added 'UseUObjectArrayCache' to UE4SS-settings.ini. See the ini file to more information.
 
 Lua
 * Added better support for StrProperty/FString.

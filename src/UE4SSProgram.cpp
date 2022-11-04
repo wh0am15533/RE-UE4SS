@@ -344,6 +344,7 @@ namespace RC
         config.bEnableCache = true;
         config.NumScanAttemptsNormal = settings_manager.General.MaxScanAttemptsNormal;
         config.NumScanAttemptsModular = settings_manager.General.MaxScanAttemptsModular;
+        config.bUseUObjectArrayCache = settings_manager.General.UseUObjectArrayCache;
 
         // Retrieve from the config file the number of threads to be used for aob scanning
         {
@@ -784,7 +785,7 @@ namespace RC
                 std::wstring mod_name = explode_by_occurrence(current_line, L':', 1);
                 std::wstring mod_enabled = explode_by_occurrence(current_line, L':', ExplodeType::FromEnd);
 
-                Mod* mod = find_mod_by_name(mod_name, IsInstalled::Yes);
+                const Mod* mod = find_mod_by_name(mod_name, IsInstalled::Yes);
 
                 if (mod_enabled == L"1")
                 {
@@ -817,7 +818,7 @@ namespace RC
             if (!std::filesystem::exists(mod_directory.path() / "enabled.txt", ec)) { continue; }
             if (ec.value() != 0) { set_error("exists ran into error %d", ec.value()); }
 
-            auto mod = find_mod_by_name(mod_directory.path().stem().c_str(), IsInstalled::Yes);
+            const auto mod = find_mod_by_name(mod_directory.path().stem().c_str(), IsInstalled::Yes);
             if (!mod)
             {
                 Output::send<LogLevel::Warning>(STR("Found a mod with enabled.txt but mod has not been installed properly.\n"));
@@ -948,7 +949,7 @@ namespace RC
         m_input_handler.register_keydown_event(key, modifier_keys, callback, custom_data);
     }
 
-    auto UE4SSProgram::find_mod_by_name(std::wstring_view mod_name, IsInstalled is_installed, IsStarted is_started) -> Mod*
+    auto UE4SSProgram::find_mod_by_name(std::wstring_view mod_name, IsInstalled is_installed, IsStarted is_started) -> const Mod*
     {
         auto mod_exists_with_name = std::find_if(m_mods.begin(), m_mods.end(), [&](auto& elem) -> bool {
             bool found = true;
@@ -972,7 +973,7 @@ namespace RC
         }
     }
 
-    auto UE4SSProgram::find_mod_by_name(std::string_view mod_name, UE4SSProgram::IsInstalled installed_only, IsStarted is_started) -> Mod*
+    auto UE4SSProgram::find_mod_by_name(std::string_view mod_name, UE4SSProgram::IsInstalled installed_only, IsStarted is_started) -> const Mod*
     {
         return find_mod_by_name(to_wstring(mod_name), installed_only, is_started);
     }

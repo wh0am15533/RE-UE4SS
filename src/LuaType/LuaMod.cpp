@@ -2,9 +2,9 @@
 
 namespace RC::LuaType
 {
-    Mod::Mod(RC::Mod* object) : RemoteObjectBase<RC::Mod, ModName>(object) {}
+    Mod::Mod(const RC::Mod* object) : RemoteObjectBase<const RC::Mod, ModName>(object) {}
 
-    auto Mod::construct(const LuaMadeSimple::Lua& lua, RC::Mod* cpp_object) -> const LuaMadeSimple::Lua::Table
+    auto Mod::construct(const LuaMadeSimple::Lua& lua, const RC::Mod* cpp_object) -> const LuaMadeSimple::Lua::Table
     {
         LuaType::Mod lua_object{cpp_object};
 
