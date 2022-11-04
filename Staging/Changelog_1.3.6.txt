@@ -10,9 +10,7 @@ Lua
 * Added support for FSoftObjectPath and TSoftClassPtr, see API.txt for more information.
 * The global function "RegisterHook" now returns two integers that represent pre & post callback ids.
   These ids can be passed to the "UnregisterHook" global function to unhook a function.
-* Note that the callbacks for "RegisterHook" and "NotifyOnNewObject" execute in the game thread so the code in these callbacks needs to be careful when accessing Lua variables outside the callbacks.
-* Added the global function "UnregisterHook", see API.txt for more information.
+
 
 Fixes
-* Fixed a rare crash that could occur when interacting with parameters in callbacks passed to "RegisterHook".
 * Fixed a bug that caused an occasional crash on startup.
