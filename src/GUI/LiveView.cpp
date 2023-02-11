@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <limits>
+#include <memory>
 #include <string>
 #include <format>
 #include <unordered_map>
@@ -9,6 +10,7 @@
 #include <GUI/LiveView.hpp>
 #include <GUI/GUI.hpp>
 #include <GUI/ImGuiUtility.hpp>
+#include <GUI/UFunctionCallerWidget.hpp>
 #include <ExceptionHandling.hpp>
 #include <DynamicOutput/DynamicOutput.hpp>
 #include <Helpers/String.hpp>
@@ -479,7 +481,7 @@ namespace RC::GUI
         }
     };
 
-    LiveView::LiveView()
+    LiveView::LiveView() : m_function_caller_widget(new UFunctionCallerWidget{})
     {
         m_search_by_name_buffer = new char[m_search_buffer_capacity];
         strncpy_s(m_search_by_name_buffer, m_default_search_buffer.size() + sizeof(char), m_default_search_buffer.data(), m_default_search_buffer.size() + sizeof(char));
@@ -499,6 +501,7 @@ namespace RC::GUI
         }
 
         delete[] m_search_by_name_buffer;
+        delete m_function_caller_widget;
     }
 
     auto LiveView::guobjectarray_iterator(int32_t int_data_1, int32_t int_data_2, const std::function<void(UObject*)>& callable) -> void
@@ -587,39 +590,6 @@ namespace RC::GUI
             attempt_to_add_search_result(object);
             return LoopAction::Continue;
         });
-    }
-
-    static auto ImGui_GetID(int int_id) -> ImGuiID
-    {
-        ImGuiWindow* window = GImGui->CurrentWindow;
-        return window->GetID(int_id);
-    }
-
-    static auto ImGui_TreeNodeEx(const char* label, int int_id, ImGuiTreeNodeFlags flags = 0) -> bool
-    {
-        ImGuiWindow* window = ImGui::GetCurrentWindow();
-        if (window->SkipItems)
-            return false;
-
-        return ImGui::TreeNodeBehavior(window->GetID(int_id), flags, label, NULL);
-    }
-
-    static auto ImGui_TreeNodeEx(const char* label, void* ptr_id, ImGuiTreeNodeFlags flags = 0) -> bool
-    {
-        ImGuiWindow* window = ImGui::GetCurrentWindow();
-        if (window->SkipItems)
-            return false;
-
-        return ImGui::TreeNodeBehavior(window->GetID(ptr_id), flags, label, NULL);
-    }
-
-    static auto ImGui_TreeNodeEx(const char* label, const char* str_id, ImGuiTreeNodeFlags flags) -> bool
-    {
-        ImGuiWindow* window = ImGui::GetCurrentWindow();
-        if (window->SkipItems)
-            return false;
-
-        return ImGui::TreeNodeBehavior(window->GetID(str_id), flags, label, NULL);
     }
 
     static auto collapse_all_except(int except_id) -> void
@@ -1506,9 +1476,17 @@ namespace RC::GUI
         auto selected_prev_object = render_history_menu("InfoPanelHistory_Next");
         if (selected_prev_object.second) { next_object_index_to_select = selected_prev_object.first; }
 
+        auto currently_selected_object = get_selected_object_or_property();
+
+        ImGui::SameLine();
+        if (!currently_selected_object.is_object) { ImGui::BeginDisabled(); }
+        if (ImGui::Button("Find functions"))
+        {
+            m_function_caller_widget->open_widget_deferred();
+        }
+        if (!currently_selected_object.is_object) { ImGui::EndDisabled(); }
         ImGui::Separator();
 
-        auto currently_selected_object = get_selected_object_or_property();
         if (currently_selected_object.is_object)
         {
             render_info_panel_as_object(currently_selected_object.object_item, currently_selected_object.object);
@@ -1725,6 +1703,12 @@ namespace RC::GUI
         ImGui::PopStyleColor();
 
         render_info_panel();
+
+        const auto& selected_item = get_selected_object_or_property();
+        if (selected_item.is_object)
+        {
+            m_function_caller_widget->render(selected_item.object);
+        }
     }
 
     static auto toggle_all_watches(bool check) -> void

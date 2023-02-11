@@ -6,12 +6,13 @@
 #include <unordered_map>
 #include <functional>
 #include <variant>
+#include <memory>
 
 #include <DynamicOutput/DynamicOutput.hpp>
 
 namespace RC::Unreal
 {
-    class FUObjectItem;
+    struct FUObjectItem;
     class UObject;
     class UStruct;
     class UClass;
@@ -22,6 +23,8 @@ namespace RC::GUI
 {
     using namespace RC::Unreal;
 
+    class UFunctionCallerWidget;
+    
     struct SearchOptions
     {
         bool include_inheritance{};
@@ -82,6 +85,7 @@ namespace RC::GUI
         std::string m_current_property_value_buffer{};
         float m_top_size{300.0f};
         float m_bottom_size{0.0f};
+        UFunctionCallerWidget* m_function_caller_widget{};
         bool m_is_searching_by_name{};
         bool m_search_field_clear_requested{};
         bool m_search_field_cleared{};
@@ -144,7 +148,7 @@ namespace RC::GUI
         auto render_struct_sub_tree_hierarchy(UStruct* ustruct) -> void;
         auto render_class(UClass*) -> void;
         auto render_super_struct(UStruct*) -> void;
-        
+
         enum class ContainerType { Object, NonObject, };
         auto render_property_value(FProperty* property, ContainerType container_type, void* container, FProperty** last_property_in, bool* tried_to_open_nullptr_object, bool is_watchable = true, int32_t first_offset = -1, bool container_is_array = false) -> std::variant<std::monostate, UObject*, FProperty*>;
 
