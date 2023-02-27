@@ -161,7 +161,6 @@ namespace RC::GUI
         auto get_selected_object(size_t index = 0, UseIndex = UseIndex::No) -> std::pair<const FUObjectItem*, UObject*>;
         auto get_selected_property(size_t index = 0, UseIndex = UseIndex::No) -> FProperty*;
 
-
     private:
         auto guobjectarray_iterator(int32_t int_data_1, int32_t int_data_2, const std::function<void(UObject*)>& callable) -> void;
         auto guobjectarray_by_name_iterator([[maybe_unused]]int32_t int_data_1, [[maybe_unused]]int32_t int_data_2, const std::function<void(UObject*)>& callable) -> void;
@@ -198,4 +197,3 @@ namespace std
 }
 
 #endif //UE4SS_GUI_LIVE_VIEW_HPP
-

@@ -66,10 +66,18 @@ namespace RC::LuaType
 
         if (lua.is_userdata())
         {
-            auto& lua_object2 = lua.get_userdata<LuaType::UFunction>();
-            if (!is_first_userdata_function && lua_object2.get_remote_cpp_object()->IsA<Unreal::UFunction>())
+            auto& lua_object2 = lua.get_userdata<LuaType::UE4SSBaseObject>(1, true);
+            if (!is_first_userdata_function && lua_object2.derives_from_function())
             {
-                func = lua_object2.get_remote_cpp_object();
+                func = lua.get_userdata<LuaType::UFunction>(1).get_remote_cpp_object();
+            }
+            else if (func && !calling_context)
+            {
+                calling_context = lua.get_userdata<LuaType::UObject>(1).get_remote_cpp_object();
+            }
+            else
+            {
+                lua.discard_value();
             }
         }
 
@@ -155,6 +163,11 @@ namespace RC::LuaType
                                                                            .property = param_next,
                                                                            .lua_ref = lua.registry().make_ref()
                                                                    });
+
+                        if (!param_next->IsA<Unreal::FStructProperty>())
+                        {
+                            return LoopAction::Continue;
+                        }
                     }
 
                     int32_t name_comparison_index = property_type_fname.GetComparisonIndex();
@@ -203,6 +216,11 @@ namespace RC::LuaType
                 lua.registry().get_table_ref(lua_table_ref);
                 auto lua_table = lua.get_table();
 
+                if (!param->IsA<Unreal::FStructProperty>())
+                {
+                    lua_table.add_key(to_string(param->GetName()).c_str());
+                }
+
                 Unreal::FName param_type_fname = param->GetClass().GetFName();
                 int32_t name_comparison_index = param_type_fname.GetComparisonIndex();
 
@@ -224,6 +242,11 @@ namespace RC::LuaType
                 {
                     std::string param_type_name = to_string(param_type_fname.ToString());
                     lua.throw_error(std::format("Tried calling UFunction without a registered handler 'Out' param. Type '{}' not supported.", param_type_name));
+                }
+
+                if (!param->IsA<Unreal::FStructProperty>())
+                {
+                    lua_table.fuse_pair();
                 }
             }
         }
@@ -268,6 +291,10 @@ namespace RC::LuaType
         if (!object)
         {
             UObject::construct(lua, nullptr);
+        }
+        else if (object->IsA<Unreal::UFunction>())
+        {
+            UFunction::construct(lua, nullptr, static_cast<Unreal::UFunction*>(object));
         }
         else if (object->IsA<Unreal::UClass>())
         {
@@ -985,7 +1012,7 @@ namespace RC::LuaType
                 return;
             }
             case Operation::GetParam:
-                params.lua.throw_error("[push_nameproperty] Operation::GetParam is not supported");
+                RemoteUnrealParam::construct(params.lua, params.data, params.base, params.property);
                 return;
             default:
                 params.lua.throw_error("[push_nameproperty] Unhandled Operation");
@@ -1258,7 +1285,7 @@ Overloads:
             // We can either throw an error and kill the execution
             /**/
             std::string property_type_name = to_string(property_type.ToString());
-            lua.throw_error(std::format("Tried accessing unreal property without a registered handler. Property type '{}' not supported.", property_type_name));
+            lua.throw_error(std::format("[handle_unreal_property_value] Tried accessing unreal property without a registered handler. Property type '{}' not supported.", property_type_name));
             //*/
 
             // Or we can treat unhandled property types as some sort of generic type
@@ -1387,7 +1414,7 @@ Overloads:
             // We can either throw an error and kill the execution
             /**/
             std::string property_type_name = to_string(lua_object.m_type.ToString());
-            lua.throw_error(std::format("Tried accessing unreal property without a registered handler. Property type '{}' not supported.", property_type_name));
+            lua.throw_error(std::format("[RemoteUnrealParam::prepare_to_handle] Tried accessing unreal property without a registered handler. Property type '{}' not supported.", property_type_name));
             //*/
 
             // Or we can treat unhandled property types as some sort of generic type

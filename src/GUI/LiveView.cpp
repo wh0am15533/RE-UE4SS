@@ -116,7 +116,6 @@ namespace RC::GUI
             LiveView::s_name_search_results.emplace_back(object);
             LiveView::s_name_search_results_set.emplace(object);
         }
-        
     }
 
     static auto remove_search_result(UObject* object) -> void
@@ -969,8 +968,9 @@ namespace RC::GUI
         // TODO: The 'container' variable should be a variant or something because it could be a struct or array, it's not guaranteed to be a UObject.
         if (container_type == ContainerType::Object)
         {
-            auto obj = static_cast<UObject*>(container);
-            auto edit_property_value_modal_name = to_string(std::format(STR("Edit value of property: {}->{}"), obj->GetName(), property->GetName()));
+            auto obj = container_is_array ? *static_cast<UObject**>(container) : static_cast<UObject*>(container);
+            auto obj_name = obj ? obj->GetName() : STR("None");
+            auto edit_property_value_modal_name = to_string(std::format(STR("Edit value of property: {}->{}"), obj_name, property->GetName()));
 
             if (open_edit_value_popup)
             {
@@ -987,7 +987,6 @@ namespace RC::GUI
                 ImGui::Text("Uses the same format as the 'set' UE4 console command.");
                 ImGui::Text("The game could crash if the new value is invalid.");
                 ImGui::Text("The game can override the new value immediately.");
-                
                 ImGui::PushItemWidth(-1.0f);
                 ImGui::InputText("##CurrentPropertyValue", &m_current_property_value_buffer);
                 if (ImGui::Button("Apply"))
@@ -1021,7 +1020,7 @@ namespace RC::GUI
                 m_modal_edit_property_value_opened_this_frame = false;
             }
         }
-        
+
         return next_item_to_render;
     }
 
@@ -1824,4 +1823,3 @@ namespace RC::GUI
         ImGui::EndChild();
     }
 }
-
