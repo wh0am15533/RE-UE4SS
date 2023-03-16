@@ -99,6 +99,8 @@ namespace RC
         bool m_pause_events_processing{};
         bool m_simple_console_enabled{};
         bool m_debug_console_enabled{};
+        bool m_defer_debug_console_creation{};
+        int64_t m_defer_time{0};
         bool m_debug_console_visible{};
 
     public:
@@ -128,11 +130,14 @@ namespace RC
             Failure,
         };
         auto create_emergency_console_for_early_error(File::StringViewType error_message) -> void;
-        auto setup_output_devices() -> void;
+        auto setup_simple_output_device() -> void;
+        auto setup_debug_output_device() -> void;
         auto setup_mod_directory_path() -> void;
+        auto create_simple_console() -> void;
         auto create_debug_console() -> void;
         auto setup_unreal() -> void;
         auto load_unreal_offsets_from_file() -> void;
+        auto init_debug_console() -> void;
         auto share_lua_functions() -> void;
         auto on_program_start() -> void;
         auto setup_unreal_properties() -> void;

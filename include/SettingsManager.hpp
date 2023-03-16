@@ -59,6 +59,8 @@ namespace RC
         {
             bool SimpleConsoleEnabled{true};
             bool DebugConsoleEnabled{true};
+            bool DeferDebugConsoleCreation{true};
+            int64_t DeferTime{5};
             bool DebugConsoleVisible{true};
             GUI::GfxBackend GraphicsAPI{GUI::GfxBackend::GLFW3_OpenGL3};
             int64_t LiveViewObjectsPerGroup{64 * 1024 / 2};

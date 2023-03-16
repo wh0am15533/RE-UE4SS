@@ -65,7 +65,9 @@ namespace RC
 
         constexpr static File::CharType section_debug[] = STR("Debug");
         REGISTER_BOOL_SETTING(Debug.SimpleConsoleEnabled, section_debug, ConsoleEnabled)
-        REGISTER_BOOL_SETTING(Debug.DebugConsoleEnabled , section_debug, GuiConsoleEnabled)
+        REGISTER_BOOL_SETTING(Debug.DebugConsoleEnabled, section_debug, GuiConsoleEnabled)
+        REGISTER_BOOL_SETTING(Debug.DeferDebugConsoleCreation, section_debug, DeferGuiConsoleCreation)
+        REGISTER_INT64_SETTING(Debug.DeferTime, section_debug, TimeToDeferGuiCreation)
         REGISTER_BOOL_SETTING(Debug.DebugConsoleVisible, section_debug, GuiConsoleVisible)
         StringType graphics_api_string{};
         REGISTER_STRING_SETTING(graphics_api_string, section_debug, GraphicsAPI)

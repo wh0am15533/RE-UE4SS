@@ -36,6 +36,7 @@
 #include <SDKGenerator/Generator.hpp>
 #include <SDKGenerator/UEHeaderGenerator.hpp>
 #include <ExceptionHandling.hpp>
+#include <future>
 #include <ObjectDumper/ObjectToString.hpp>
 #include <IniParser/Ini.hpp>
 #include <Unreal/GameplayStatics.hpp>
@@ -147,10 +148,23 @@ namespace RC
 
             m_simple_console_enabled = settings_manager.Debug.SimpleConsoleEnabled;
             m_debug_console_enabled = settings_manager.Debug.DebugConsoleEnabled;
+            m_defer_debug_console_creation = settings_manager.Debug.DeferDebugConsoleCreation;
+            m_defer_time = settings_manager.Debug.DeferTime;
             m_debug_console_visible = settings_manager.Debug.DebugConsoleVisible;
 
-            create_debug_console();
-            setup_output_devices();
+            create_simple_console();
+            setup_simple_output_device();
+            std::future<void> future = {};
+            if (!m_defer_debug_console_creation)
+            {
+                create_debug_console();
+            }
+            else
+            {
+                future = std::async(std::launch::async, &UE4SSProgram::create_debug_console, this);
+            }
+            
+
 
             // This is experimental code that's here only for future reference
             /*
@@ -169,6 +183,10 @@ namespace RC
                          std::format(L"{}", UE4SS_LIB_VERSION_PRERELEASE == 0 ? L"" : std::format(L" PreRelease #{}", UE4SS_LIB_VERSION_PRERELEASE)),
                          std::format(L"{}", UE4SS_LIB_BETA_STARTED == 0 ? L"" : (UE4SS_LIB_IS_BETA == 0 ? L" Beta #?" : std::format(L" Beta #{}", UE4SS_LIB_VERSION_BETA))),
                          UE4SS_LIB_BUILD_NUMBER);
+            if (m_defer_debug_console_creation)
+            {
+                Output::send(STR("GUI Console Creation Deferred\n"));
+            }
 #ifdef WITH_CASE_PRESERVING_NAME
             Output::send(STR("WITH_CASE_PRESERVING_NAME: Yes\n\n"));
 #else
@@ -213,6 +231,7 @@ namespace RC
             // As long as you don't do that the thread will stay open and accept further inputs
             m_event_loop.join();
 #endif
+            future.get();
         }
         catch (std::runtime_error& e)
         {
@@ -288,7 +307,7 @@ namespace RC
     auto UE4SSProgram::create_emergency_console_for_early_error(File::StringViewType error_message) -> void
     {
         m_simple_console_enabled = true;
-        create_debug_console();
+        create_simple_console();
         printf_s("%S\n", error_message.data());
     }
 
@@ -306,7 +325,7 @@ namespace RC
         }
     }
 
-    auto UE4SSProgram::create_debug_console() -> void
+    auto UE4SSProgram::create_simple_console() -> void
     {
         if (m_simple_console_enabled)
         {
@@ -321,9 +340,21 @@ namespace RC
             }
 
         }
-        if (m_debug_console_enabled && m_debug_console_visible)
+    }
+
+    auto UE4SSProgram::create_debug_console() -> void
+    {
+        if (m_debug_console_enabled)
         {
-            m_render_thread = std::jthread{ &GUI::gui_thread, &m_debugging_gui };
+            if (m_defer_debug_console_creation)
+            {
+                std::this_thread::sleep_for(std::chrono::seconds(25));
+            }
+            if (m_debug_console_visible)
+            {
+                m_render_thread = std::jthread{ &GUI::gui_thread, &m_debugging_gui };
+            }
+            setup_debug_output_device();
         }
     }
 
@@ -591,6 +622,33 @@ namespace RC
 
     static FName g_player_controller_name{};
 
+    auto UE4SSProgram::init_debug_console() -> void
+    {
+        if (settings_manager.General.UseUObjectArrayCache)
+        {
+            m_debugging_gui.get_live_view().set_listeners_allowed(true);
+            m_debugging_gui.get_live_view().set_listeners();
+        }
+        else
+        {
+            m_debugging_gui.get_live_view().set_listeners_allowed(false);
+        }
+
+        m_input_handler.register_keydown_event(Input::Key::O, { Input::ModifierKey::CONTROL }, [&]() {
+            TRY([&] {
+                if (!get_debugging_ui().is_open())
+                {
+                    if (m_render_thread.joinable())
+                    {
+                        m_render_thread.request_stop();
+                        m_render_thread.join();
+                    }
+                    m_render_thread = std::jthread{ &GUI::gui_thread, &m_debugging_gui };
+                }
+                });
+            });
+    }
+    
     auto UE4SSProgram::on_program_start() -> void
     {
         using namespace Unreal;
@@ -602,29 +660,7 @@ namespace RC
 
         if (m_debug_console_enabled)
         {
-            if (settings_manager.General.UseUObjectArrayCache)
-            {
-                m_debugging_gui.get_live_view().set_listeners_allowed(true);
-                m_debugging_gui.get_live_view().set_listeners();
-            }
-            else
-            {
-                m_debugging_gui.get_live_view().set_listeners_allowed(false);
-            }
-
-            m_input_handler.register_keydown_event(Input::Key::O, { Input::ModifierKey::CONTROL }, [&]() {
-                TRY([&] {
-                    if (!get_debugging_ui().is_open())
-                    {
-                        if (m_render_thread.joinable())
-                        {
-                            m_render_thread.request_stop();
-                            m_render_thread.join();
-                        }
-                        m_render_thread = std::jthread{ &GUI::gui_thread, &m_debugging_gui };
-                    }
-                    });
-                });
+            init_debug_console();
         }
 
 #ifdef TIME_FUNCTION_MACRO_ENABLED
@@ -674,7 +710,7 @@ namespace RC
     auto UE4SSProgram::update() -> void
     {
         on_program_start();
-
+        
         Output::send(STR("Event loop start\n"));
         for (m_processing_events = true; m_processing_events;)
         {
@@ -783,7 +819,7 @@ namespace RC
         install_mods();
     }
 
-    auto UE4SSProgram::setup_output_devices() -> void
+    auto UE4SSProgram::setup_simple_output_device() -> void
     {
         // Setup DynamicOutput
         if (m_simple_console_enabled)
@@ -794,7 +830,11 @@ namespace RC
                 return std::format(STR("[{}] {}"), std::format(STR("{:%X}"), std::chrono::system_clock::now()), string);
             });
         }
+    }
 
+    auto UE4SSProgram::setup_debug_output_device() -> void
+    {
+        // Setup DynamicOutput
         if (m_debug_console_enabled)
         {
             m_console_device = &Output::set_default_devices<Output::ConsoleDevice>();
