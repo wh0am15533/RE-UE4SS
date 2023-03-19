@@ -61,6 +61,7 @@ namespace RC
     protected:
         Input::Handler m_input_handler{L"ConsoleWindowClass", L"UnrealWindow"};
         std::jthread m_event_loop;
+        std::jthread m_deferred_gui_thread;
         std::jthread m_render_thread;
 
     private:

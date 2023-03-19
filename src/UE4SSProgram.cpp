@@ -36,7 +36,6 @@
 #include <SDKGenerator/Generator.hpp>
 #include <SDKGenerator/UEHeaderGenerator.hpp>
 #include <ExceptionHandling.hpp>
-#include <future>
 #include <ObjectDumper/ObjectToString.hpp>
 #include <IniParser/Ini.hpp>
 #include <Unreal/GameplayStatics.hpp>
@@ -153,16 +152,9 @@ namespace RC
             m_debug_console_visible = settings_manager.Debug.DebugConsoleVisible;
 
             create_simple_console();
-            setup_simple_output_device();
-            std::future<void> future = {};
-            if (!m_defer_debug_console_creation)
-            {
-                create_debug_console();
-            }
-            else
-            {
-                future = std::async(std::launch::async, &UE4SSProgram::create_debug_console, this);
-            }
+            setup_simple_output_device();   
+
+            
             
 
 
@@ -231,7 +223,6 @@ namespace RC
             // As long as you don't do that the thread will stay open and accept further inputs
             m_event_loop.join();
 #endif
-            future.get();
         }
         catch (std::runtime_error& e)
         {
@@ -355,6 +346,7 @@ namespace RC
                 m_render_thread = std::jthread{ &GUI::gui_thread, &m_debugging_gui };
             }
             setup_debug_output_device();
+            init_debug_console();
         }
     }
 
@@ -658,10 +650,8 @@ namespace RC
         UObjectArray::AddUObjectCreateListener(&FUEDeathListener::UEDeathListener);
         //*/
 
-        if (m_debug_console_enabled)
-        {
-            init_debug_console();
-        }
+        m_deferred_gui_thread = std::jthread{&UE4SSProgram::create_debug_console, this};
+
 
 #ifdef TIME_FUNCTION_MACRO_ENABLED
         m_input_handler.register_keydown_event(Input::Key::Y, { Input::ModifierKey::CONTROL }, [&]() {
